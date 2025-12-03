@@ -1,0 +1,518 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Atom, Zap, RefreshCw, Trophy, Info, ChevronRight, CheckCircle, AlertTriangle, Sparkles, Loader2, BookOpen } from 'lucide-react';
+
+// 元素週期表數據 (前 18 號元素)
+const PERIODIC_TABLE = [
+  { number: 0, symbol: '?', name: '無', mass: 0 },
+  { number: 1, symbol: 'H', name: '氫 (Hydrogen)', stableNeutrons: [0, 1, 2] },
+  { number: 2, symbol: 'He', name: '氦 (Helium)', stableNeutrons: [1, 2] },
+  { number: 3, symbol: 'Li', name: '鋰 (Lithium)', stableNeutrons: [3, 4] },
+  { number: 4, symbol: 'Be', name: '鈹 (Beryllium)', stableNeutrons: [5] },
+  { number: 5, symbol: 'B', name: '硼 (Boron)', stableNeutrons: [5, 6] },
+  { number: 6, symbol: 'C', name: '碳 (Carbon)', stableNeutrons: [6, 7] },
+  { number: 7, symbol: 'N', name: '氮 (Nitrogen)', stableNeutrons: [7, 8] },
+  { number: 8, symbol: 'O', name: '氧 (Oxygen)', stableNeutrons: [8, 9, 10] },
+  { number: 9, symbol: 'F', name: '氟 (Fluorine)', stableNeutrons: [10] },
+  { number: 10, symbol: 'Ne', name: '氖 (Neon)', stableNeutrons: [10, 11, 12] },
+  { number: 11, symbol: 'Na', name: '鈉 (Sodium)', stableNeutrons: [11, 12] },
+  { number: 12, symbol: 'Mg', name: '鎂 (Magnesium)', stableNeutrons: [12, 13, 14] },
+  { number: 13, symbol: 'Al', name: '鋁 (Aluminum)', stableNeutrons: [14] },
+  { number: 14, symbol: 'Si', name: '矽 (Silicon)', stableNeutrons: [14, 15, 16] },
+  { number: 15, symbol: 'P', name: '磷 (Phosphorus)', stableNeutrons: [16] },
+  { number: 16, symbol: 'S', name: '硫 (Sulfur)', stableNeutrons: [16, 17, 18] },
+  { number: 17, symbol: 'Cl', name: '氯 (Chlorine)', stableNeutrons: [18, 20] },
+  { number: 18, symbol: 'Ar', name: '氬 (Argon)', stableNeutrons: [20, 22] },
+];
+
+const CHALLENGES = [
+  { text: "製作 氫原子 (H)", target: { p: 1, n: 0, e: 1 }, hint: "最簡單的原子，1個質子和1個電子。" },
+  { text: "製作 氦原子 (He)", target: { p: 2, n: 2, e: 2 }, hint: "氦有2個質子、2個中子和2個電子。" },
+  { text: "製作 鋰離子 (Li+)", target: { p: 3, n: 4, e: 2 }, hint: "鋰原本有3個電子，變成正離子需要失去1個電子。" },
+  { text: "製作 碳-14 (同位素)", target: { p: 6, n: 8, e: 6 }, hint: "碳原子序是6，質量數14代表質子+中子=14。" },
+  { text: "製作 氧離子 (O2-)", target: { p: 8, n: 8, e: 10 }, hint: "氧需要獲得2個電子才能填滿外層軌域。" },
+];
+
+export default function App() {
+  const [protons, setProtons] = useState(1);
+  const [neutrons, setNeutrons] = useState(0);
+  const [electrons, setElectrons] = useState(1);
+  const [mode, setMode] = useState('sandbox'); // 'sandbox' or 'challenge'
+  const [currentChallengeIndex, setCurrentChallengeIndex] = useState(0);
+  const [showChallengeSuccess, setShowChallengeSuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState('particles'); // 'particles', 'info', or 'ai'
+  
+  // AI 相關狀態
+  const [aiAnalysis, setAiAnalysis] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  // 計算屬性
+  const atomicNumber = protons;
+  const massNumber = protons + neutrons;
+  const charge = protons - electrons;
+  const element = PERIODIC_TABLE[atomicNumber] || { symbol: '?', name: '未知 / 不穩定', stableNeutrons: [] };
+  
+  // 檢查穩定性
+  const isStable = element.stableNeutrons?.includes(neutrons);
+  const isIon = charge !== 0;
+  
+  // 電子組態計算 (簡單的 2, 8, 8 規則)
+  const getElectronConfig = (count) => {
+    let remaining = count;
+    const shells = [];
+    
+    // K層
+    const k = Math.min(remaining, 2);
+    shells.push(k);
+    remaining -= k;
+    
+    if (remaining > 0) {
+      // L層
+      const l = Math.min(remaining, 8);
+      shells.push(l);
+      remaining -= l;
+    }
+    
+    if (remaining > 0) {
+      // M層
+      const m = Math.min(remaining, 8);
+      shells.push(m);
+      remaining -= m;
+    }
+    
+    return shells;
+  };
+
+  const electronConfig = getElectronConfig(electrons);
+
+  // 當原子改變時，重置 AI 分析 (避免顯示舊的分析結果)
+  useEffect(() => {
+    setAiAnalysis("");
+    setAiError("");
+  }, [protons, neutrons, electrons]);
+
+  // 檢查挑戰是否完成
+  useEffect(() => {
+    if (mode === 'challenge') {
+      const target = CHALLENGES[currentChallengeIndex].target;
+      if (protons === target.p && neutrons === target.n && electrons === target.e) {
+        setShowChallengeSuccess(true);
+      } else {
+        setShowChallengeSuccess(false);
+      }
+    }
+  }, [protons, neutrons, electrons, mode, currentChallengeIndex]);
+
+  const resetAtom = () => {
+    setProtons(1);
+    setNeutrons(0);
+    setElectrons(1);
+    setShowChallengeSuccess(false);
+    setAiAnalysis("");
+  };
+
+  const nextChallenge = () => {
+    if (currentChallengeIndex < CHALLENGES.length - 1) {
+      setCurrentChallengeIndex(prev => prev + 1);
+      resetAtom();
+    } else {
+      alert("恭喜！你完成了所有挑戰！");
+      setMode('sandbox');
+      setCurrentChallengeIndex(0);
+    }
+  };
+
+  // Gemini API 呼叫函數
+  const callGemini = async () => {
+    if (protons === 0) return;
+    
+    setIsAiLoading(true);
+    setAiError("");
+    setAiAnalysis("");
+
+    const apiKey = ""; // 執行時環境提供
+    const prompt = `
+      你是一位幽默且博學的化學老師。學生剛剛在原子模擬器中構建了以下原子：
+      - 元素：${element.name} (${element.symbol})
+      - 質子數：${protons}
+      - 中子數：${neutrons} (質量數：${massNumber})
+      - 電子數：${electrons} (電荷：${charge})
+      - 狀態：${isStable ? "穩定" : "不穩定/放射性"}
+
+      請用繁體中文回答：
+      1. 這個特定的同位素 (${element.symbol}-${massNumber}) 在現實世界中是否存在？如果存在，有什麼特殊的用途（例如 C-14 用於定年，He-3 用於核融合）？
+      2. 如果是不穩定的，簡單說明它為什麼不穩定（例如中子太多/太少）。
+      3. 給出一個關於這個元素的有趣冷知識 (Fun Fact)。
+      
+      請保持語氣輕鬆有趣，長度控制在 150 字以內。
+    `;
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("API 請求失敗");
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      setAiAnalysis(text || "無法獲取分析結果，請稍後再試。");
+    } catch (error) {
+      console.error(error);
+      setAiError("AI 老師目前在忙，請稍後再試！");
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // 粒子控制組件
+  const ParticleControl = ({ label, count, setter, color, max = 18 }) => (
+    <div className="flex items-center justify-between bg-slate-800 p-3 rounded-lg mb-2 shadow-sm border border-slate-700">
+      <div className="flex items-center gap-2">
+        <div className={`w-4 h-4 rounded-full ${color}`}></div>
+        <span className="text-white font-medium">{label}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <button 
+          onClick={() => setter(Math.max(0, count - 1))}
+          className="w-8 h-8 flex items-center justify-center rounded bg-slate-700 text-white hover:bg-slate-600 active:bg-slate-500 transition-colors font-bold"
+        >
+          -
+        </button>
+        <span className="w-6 text-center text-xl font-bold text-white">{count}</span>
+        <button 
+          onClick={() => setter(Math.min(max, count + 1))}
+          className="w-8 h-8 flex items-center justify-center rounded bg-slate-700 text-white hover:bg-slate-600 active:bg-slate-500 transition-colors font-bold"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-blue-500 selection:text-white">
+      {/* 標題欄 */}
+      <header className="bg-slate-800 border-b border-slate-700 p-4 sticky top-0 z-10 shadow-md">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Atom className="text-blue-400 w-8 h-8 animate-pulse-slow" />
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              原子結構大師
+            </h1>
+          </div>
+          <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+            <button 
+              onClick={() => { setMode('sandbox'); resetAtom(); }}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'sandbox' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              自由模式
+            </button>
+            <button 
+              onClick={() => { setMode('challenge'); resetAtom(); }}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${mode === 'challenge' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            >
+              挑戰模式
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto p-4 md:p-6 grid md:grid-cols-2 gap-6">
+        
+        {/* 左側：原子視覺化 */}
+        <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700 shadow-xl backdrop-blur-sm relative overflow-hidden min-h-[400px] flex items-center justify-center">
+          
+          {/* 背景網格裝飾 */}
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px]"></div>
+
+          {/* 挑戰模式的提示 */}
+          {mode === 'challenge' && (
+            <div className="absolute top-4 left-4 right-4 z-10">
+              <div className="bg-purple-900/80 border border-purple-500/50 p-3 rounded-lg backdrop-blur-md">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+                    挑戰 {currentChallengeIndex + 1} / {CHALLENGES.length}
+                  </span>
+                  <button onClick={resetAtom} className="text-purple-300 hover:text-white" title="重置原子">
+                    <RefreshCw size={14} />
+                  </button>
+                </div>
+                <h3 className="text-lg font-bold text-white mb-1">{CHALLENGES[currentChallengeIndex].text}</h3>
+                <p className="text-sm text-purple-200">{CHALLENGES[currentChallengeIndex].hint}</p>
+                
+                {showChallengeSuccess && (
+                  <div className="mt-3 bg-green-500/20 border border-green-500 text-green-200 p-2 rounded flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+                    <span className="flex items-center gap-2 font-bold"><CheckCircle size={18} /> 任務完成！</span>
+                    <button 
+                      onClick={nextChallenge}
+                      className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded-md text-sm font-bold shadow-lg transition-colors flex items-center gap-1"
+                    >
+                      下一關 <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 原子 SVG 渲染 */}
+          <div className="relative z-0 w-full h-full flex items-center justify-center">
+            <svg viewBox="0 0 400 400" className="w-full max-w-[350px] aspect-square">
+              {/* 電子軌道 (Shells) */}
+              <circle cx="200" cy="200" r="60" fill="none" stroke="rgba(148, 163, 184, 0.3)" strokeWidth="1" strokeDasharray="4 4" />
+              <circle cx="200" cy="200" r="110" fill="none" stroke="rgba(148, 163, 184, 0.3)" strokeWidth="1" strokeDasharray="4 4" />
+              <circle cx="200" cy="200" r="160" fill="none" stroke="rgba(148, 163, 184, 0.3)" strokeWidth="1" strokeDasharray="4 4" />
+
+              {/* 電子 (Electrons) - 使用簡單的三角函數分佈在軌道上 */}
+              {electronConfig.map((count, shellIndex) => {
+                const radius = 60 + shellIndex * 50;
+                return (
+                  <g key={`shell-${shellIndex}`} className={`animate-spin-slow-${shellIndex}`}>
+                    <style>{`
+                      @keyframes spin-${shellIndex} {
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
+                      }
+                      .animate-spin-slow-${shellIndex} {
+                        transform-origin: 200px 200px;
+                        animation: spin-${shellIndex} ${10 + shellIndex * 5}s linear infinite;
+                      }
+                    `}</style>
+                    {Array.from({ length: count }).map((_, i) => {
+                      const angle = (i / count) * 2 * Math.PI;
+                      const x = 200 + radius * Math.cos(angle);
+                      const y = 200 + radius * Math.sin(angle);
+                      return (
+                        <circle 
+                          key={`e-${shellIndex}-${i}`} 
+                          cx={x} 
+                          cy={y} 
+                          r="6" 
+                          fill="#fbbf24" 
+                          stroke="#fff" 
+                          strokeWidth="1.5"
+                          className="shadow-lg"
+                        />
+                      );
+                    })}
+                  </g>
+                );
+              })}
+
+              {/* 原子核 (Nucleus) - 質子和中子聚集在中心 */}
+              <g transform="translate(200, 200)">
+                {Array.from({ length: protons + neutrons }).map((_, i) => {
+                  const seed = i * 1337;
+                  const r = Math.sqrt((seed % 100) / 100) * 25; 
+                  const theta = (seed % 360) * (Math.PI / 180);
+                  const nx = r * Math.cos(theta);
+                  const ny = r * Math.sin(theta);
+                  const isProton = i < protons;
+                  
+                  return (
+                    <circle 
+                      key={`nuc-${i}`} 
+                      cx={nx} 
+                      cy={ny} 
+                      r="8" 
+                      fill={isProton ? "#ef4444" : "#94a3b8"} 
+                      stroke="rgba(0,0,0,0.3)" 
+                      strokeWidth="1"
+                    />
+                  );
+                })}
+              </g>
+            </svg>
+            
+            <div className="absolute bottom-4 right-4 text-6xl font-black text-slate-700 select-none pointer-events-none opacity-50">
+              {element.symbol}
+            </div>
+          </div>
+        </div>
+
+        {/* 右側：控制面板與資訊 */}
+        <div className="space-y-4">
+          
+          {/* 資訊卡片 */}
+          <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 shadow-lg">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+                  {element.symbol} 
+                  <span className={`text-lg font-medium px-2 py-0.5 rounded-full border ${isStable ? 'border-green-500/50 text-green-400 bg-green-500/10' : 'border-orange-500/50 text-orange-400 bg-orange-500/10'}`}>
+                    {isStable ? '穩定' : '不穩定'}
+                  </span>
+                </h2>
+                <p className="text-slate-400">{element.name}</p>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-slate-400">淨電荷</div>
+                <div className={`text-2xl font-bold ${charge > 0 ? 'text-red-400' : charge < 0 ? 'text-blue-400' : 'text-slate-200'}`}>
+                  {charge > 0 ? `+${charge}` : charge}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+                <span className="text-slate-400 block mb-1">原子序 (Z)</span>
+                <span className="text-xl font-bold text-white">{atomicNumber}</span>
+              </div>
+              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
+                <span className="text-slate-400 block mb-1">質量數 (A)</span>
+                <span className="text-xl font-bold text-white">{massNumber}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 控制區域 */}
+          <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 shadow-lg min-h-[300px] flex flex-col">
+            <div className="flex gap-4 mb-4 border-b border-slate-700 pb-2 overflow-x-auto">
+              <button 
+                onClick={() => setActiveTab('particles')} 
+                className={`pb-2 text-sm font-bold transition-colors whitespace-nowrap ${activeTab === 'particles' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                粒子控制
+              </button>
+              <button 
+                onClick={() => setActiveTab('info')} 
+                className={`pb-2 text-sm font-bold transition-colors whitespace-nowrap ${activeTab === 'info' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                詳細解說
+              </button>
+              <button 
+                onClick={() => setActiveTab('ai')} 
+                className={`pb-2 text-sm font-bold transition-colors whitespace-nowrap flex items-center gap-1 ${activeTab === 'ai' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                <Sparkles size={14} /> AI 實驗室
+              </button>
+            </div>
+
+            {activeTab === 'particles' && (
+              <div className="space-y-1 animate-in fade-in slide-in-from-right-4 duration-300">
+                <ParticleControl 
+                  label="質子 (Protons)" 
+                  count={protons} 
+                  setter={setProtons} 
+                  color="bg-red-500" 
+                />
+                <ParticleControl 
+                  label="中子 (Neutrons)" 
+                  count={neutrons} 
+                  setter={setNeutrons} 
+                  color="bg-slate-400" 
+                  max={30}
+                />
+                <ParticleControl 
+                  label="電子 (Electrons)" 
+                  count={electrons} 
+                  setter={setElectrons} 
+                  color="bg-yellow-400" 
+                />
+                
+                <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between items-center">
+                   <button 
+                    onClick={resetAtom}
+                    className="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors"
+                  >
+                    <RefreshCw size={14} /> 重置全部
+                  </button>
+                  {isIon && (
+                    <span className="text-xs text-blue-300 bg-blue-900/30 px-2 py-1 rounded border border-blue-800">
+                      這是一個{charge > 0 ? '陽' : '陰'}離子
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {activeTab === 'info' && (
+              <div className="text-slate-300 text-sm space-y-3 h-[200px] overflow-y-auto pr-2 custom-scrollbar animate-in fade-in slide-in-from-right-4 duration-300">
+                <div>
+                  <h4 className="font-bold text-red-400 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-red-500"></div> 質子 (Protons)</h4>
+                  <p className="ml-4 text-slate-400 text-xs mt-1">決定元素的種類。例如，6個質子永遠是碳。質子帶正電。</p>
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-300 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-slate-400"></div> 中子 (Neutrons)</h4>
+                  <p className="ml-4 text-slate-400 text-xs mt-1">決定同位素和原子核的穩定性。中子不帶電，質量與質子相近。</p>
+                </div>
+                <div>
+                  <h4 className="font-bold text-yellow-400 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-yellow-400"></div> 電子 (Electrons)</h4>
+                  <p className="ml-4 text-slate-400 text-xs mt-1">決定原子的電荷和化學性質。電子帶負電，在核外軌域運行。質量極小。</p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'ai' && (
+              <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 mb-3 flex-1 overflow-y-auto custom-scrollbar">
+                  {!aiAnalysis && !isAiLoading && !aiError && (
+                    <div className="text-center text-slate-400 py-4 flex flex-col items-center gap-2">
+                      <BookOpen size={32} className="text-purple-400/50" />
+                      <p>點擊下方按鈕，讓 AI 分析目前的原子結構！</p>
+                      <p className="text-xs text-slate-500">試著製造 碳-14 或 氦-3 看看會發生什麼事...</p>
+                    </div>
+                  )}
+                  
+                  {isAiLoading && (
+                    <div className="flex flex-col items-center justify-center py-6 text-purple-300 gap-3">
+                      <Loader2 size={24} className="animate-spin" />
+                      <span className="text-sm animate-pulse">AI 老師正在翻閱教科書...</span>
+                    </div>
+                  )}
+
+                  {aiAnalysis && (
+                    <div className="prose prose-invert prose-sm max-w-none">
+                      <div className="whitespace-pre-wrap text-slate-200 leading-relaxed">
+                        {aiAnalysis}
+                      </div>
+                    </div>
+                  )}
+
+                  {aiError && (
+                    <div className="text-red-400 text-sm text-center py-4 flex flex-col items-center gap-2">
+                      <AlertTriangle size={20} />
+                      {aiError}
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={callGemini}
+                  disabled={isAiLoading || protons === 0}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:from-slate-700 disabled:to-slate-700 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAiLoading ? (
+                    '分析中...'
+                  ) : (
+                    <>
+                      <Sparkles size={18} /> 
+                      AI 分析：{element.symbol}-{massNumber}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+      
+      {/* Footer */}
+      <footer className="max-w-4xl mx-auto p-4 text-center text-slate-600 text-sm">
+        Atom Builder Game &copy; 2024 • Powered by Gemini API
+      </footer>
+    </div>
+  );
+}
